@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #534AB7;
+  --primary-light: #EEEDFE;
+  --primary-dark: #3C3489;
+  --danger: #E24B4A;
+  --danger-light: #FCEBEB;
+  --success: #1D9E75;
+  --success-light: #E1F5EE;
+  --warning: #EF9F27;
+  --warning-light: #FAEEDA;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f8f8f6;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] { -moz-appearance: textfield; }
+
+.tab-active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+.fill-ok { color: #0F6E56; }
+.fill-mid { color: #BA7517; }
+.fill-low { color: #A32D2D; }
+
+.zone-cell {
+  @apply aspect-square flex items-center justify-center text-xs rounded cursor-pointer
+    border border-gray-200 bg-white transition-all;
+}
+.zone-cell:hover { @apply border-gray-400; }
+.zone-cell.hit {
+  @apply bg-red-50 border-red-300 text-red-700;
+}
+
+.badge {
+  @apply inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md;
+}
+.badge-primary { background: var(--primary-light); color: var(--primary-dark); }
+.badge-lock { @apply bg-gray-100 text-gray-400; }
+.badge-success { background: var(--success-light); color: #085041; }
+.badge-danger { background: var(--danger-light); color: #791F1F; }
+
+.metric-card {
+  @apply bg-gray-50 rounded-lg p-3 text-center;
+}
+
+.btn {
+  @apply px-4 py-2 rounded-lg text-sm font-medium transition-all active:scale-[0.98];
+}
+.btn-primary {
+  background: var(--primary);
+  @apply text-white;
+}
+.btn-primary:hover { background: var(--primary-dark); }
+.btn-outline {
+  @apply border border-gray-300 bg-white text-gray-700;
+}
+.btn-outline:hover { @apply bg-gray-50; }
+.btn-sm { @apply px-3 py-1.5 text-xs; }
+
+.card {
+  @apply bg-white border border-gray-200 rounded-xl p-4;
+}
