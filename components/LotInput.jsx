@@ -3,6 +3,9 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const ZONE_LABELS = ['좌상', '상', '우상', '좌중', '중앙', '우중', '좌하', '하', '우하'];
+const SEV_COLORS = ['', '#FEF3C7', '#FED7AA', '#FECACA'];
+const SEV_TEXT = ['', '#92400E', '#9A3412', '#991B1B'];
+const SEV_LABELS = ['없음', '경미', '보통', '심각'];
 const DEFAULT_COUNT = 10;
 
 export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun }) {
@@ -14,6 +17,7 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
   const [tempLower, setTempLower] = useState('');
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoMemo, setPhotoMemo] = useState('');
 
   const run = runs.find(r => r.id === runId);
 
@@ -25,6 +29,7 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
         setTempUpper(run.temp_upper || '');
         setTempLower(run.temp_lower || '');
         setPhotoPreview(run.photo_url || null);
+        setPhotoMemo(run.photo_memo || '');
       }
     }
   }, [runId]);
@@ -33,7 +38,10 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
     const { data } = await supabase.from('exp_specimens').select('*')
       .eq('run_id', runId).order('specimen_no');
     if (data && data.length > 0) {
-      setSpecimens(data);
+      setSpecimens(data.map(s => ({
+        ...s,
+        defect_severity: s.defect_severity || {},
+      })));
     } else {
       initEmpty(DEFAULT_COUNT);
     }
@@ -47,7 +55,7 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
   function initEmpty(count) {
     setSpecimens(Array.from({ length: count }, (_, i) => ({
       run_id: runId, specimen_no: i + 1,
-      weight: null, hardness: null, defect_zones: [], memo: '',
+      weight: null, hardness: null, defect_severity: {}, memo: '',
     })));
   }
 
@@ -59,15 +67,29 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
     });
   }
 
-  function toggleZone(specIdx, zoneIdx) {
+  function cycleZoneSeverity(specIdx, zoneIdx) {
     setSpecimens(prev => {
       const next = [...prev];
-      const zones = [...(next[specIdx].defect_zones || [])];
-      const i = zones.indexOf(zoneIdx);
-      if (i >= 0) zones.splice(i, 1); else zones.push(zoneIdx);
-      next[specIdx] = { ...next[specIdx], defect_zones: zones };
+      const sev = { ...(next[specIdx].defect_severity || {}) };
+      const current = sev[zoneIdx] || 0;
+      const newVal = (current + 1) % 4;
+      if (newVal === 0) delete sev[zoneIdx];
+      else sev[zoneIdx] = newVal;
+      next[specIdx] = { ...next[specIdx], defect_severity: sev };
       return next;
     });
+  }
+
+  function getMaxSeverity(spec) {
+    const sev = spec.defect_severity || {};
+    const vals = Object.values(sev);
+    if (vals.length === 0) return 0;
+    return Math.max(...vals);
+  }
+
+  function getSeveritySum(spec) {
+    const sev = spec.defect_severity || {};
+    return Object.values(sev).reduce((a, b) => a + b, 0);
   }
 
   async function uploadPhoto() {
@@ -85,23 +107,24 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
     setSaving(true);
     try {
       let photoUrl = run?.photo_url || null;
-      if (photoFile) {
-        photoUrl = await uploadPhoto();
-      }
+      if (photoFile) photoUrl = await uploadPhoto();
 
       await supabase.from('exp_runs').update({
         temp_upper: tempUpper ? Number(tempUpper) : null,
         temp_lower: tempLower ? Number(tempLower) : null,
         photo_url: photoUrl,
+        photo_memo: photoMemo || null,
       }).eq('id', runId);
 
       await supabase.from('exp_specimens').delete().eq('run_id', runId);
       const rows = specimens
-        .filter(s => s.weight !== null || s.hardness !== null)
+        .filter(s => s.weight !== null || s.hardness !== null || Object.keys(s.defect_severity || {}).length > 0)
         .map(s => ({
           run_id: runId, specimen_no: s.specimen_no,
           weight: s.weight, hardness: s.hardness,
-          defect_zones: s.defect_zones || [], memo: s.memo || '',
+          defect_severity: s.defect_severity || {},
+          defect_zones: Object.keys(s.defect_severity || {}).map(Number),
+          memo: s.memo || '',
         }));
       if (rows.length) {
         const { error } = await supabase.from('exp_specimens').insert(rows);
@@ -128,7 +151,7 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
   function addSpecimen() {
     setSpecimens(prev => [...prev, {
       run_id: runId, specimen_no: prev.length + 1,
-      weight: null, hardness: null, defect_zones: [], memo: '',
+      weight: null, hardness: null, defect_severity: {}, memo: '',
     }]);
   }
 
@@ -137,19 +160,6 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
     if (!file) return;
     setPhotoFile(file);
     setPhotoPreview(URL.createObjectURL(file));
-  }
-
-  function getFillRate(weight) {
-    if (!weight || !run) return null;
-    return (weight / run.ref_weight * 100).toFixed(1);
-  }
-
-  function getFillClass(rate) {
-    if (rate === null) return '';
-    const r = parseFloat(rate);
-    if (r >= 98) return 'fill-ok';
-    if (r >= 95) return 'fill-mid';
-    return 'fill-low';
   }
 
   if (!runId || !run) {
@@ -174,10 +184,10 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
 
   const filled = specimens.filter(s => s.weight !== null);
   const avgWeight = filled.length ? Math.round(filled.reduce((a, s) => a + s.weight, 0) / filled.length) : 0;
-  const avgFill = filled.length ? (filled.reduce((a, s) => a + s.weight / run.ref_weight * 100, 0) / filled.length).toFixed(1) : '0';
   const hardFilled = specimens.filter(s => s.hardness !== null);
-  const avgHard = hardFilled.length ? (hardFilled.reduce((a, s) => a + s.hardness, 0) / hardFilled.length).toFixed(1) : '0';
-  const defectCount = specimens.filter(s => (s.defect_zones || []).length > 0).length;
+  const avgHard = hardFilled.length ? (hardFilled.reduce((a, s) => a + s.hardness, 0) / hardFilled.length).toFixed(1) : '—';
+  const defectCount = specimens.filter(s => Object.keys(s.defect_severity || {}).length > 0).length;
+  const totalSeverity = specimens.reduce((a, s) => a + getSeveritySum(s), 0);
 
   return (
     <div className="space-y-4">
@@ -226,15 +236,16 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
               <tr className="text-xs text-gray-400">
                 <th className="py-2 w-8 text-center">#</th>
                 <th className="py-2 text-center">중량(g)</th>
-                <th className="py-2 text-center">충진율</th>
                 <th className="py-2 text-center">경도</th>
+                <th className="py-2 text-center">미충진</th>
                 <th className="py-2 text-center w-10">구역</th>
               </tr>
             </thead>
             <tbody>
               {specimens.map((s, idx) => {
-                const fill = getFillRate(s.weight);
-                const hasZones = (s.defect_zones || []).length > 0;
+                const maxSev = getMaxSeverity(s);
+                const sevSum = getSeveritySum(s);
+                const hasDefect = maxSev > 0;
                 return (
                   <tr key={idx} className="border-t border-gray-100">
                     <td className="py-1 text-center text-xs text-gray-400 font-medium">{s.specimen_no}</td>
@@ -243,18 +254,25 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
                         onChange={e => updateSpec(idx, 'weight', e.target.value)}
                         className="w-full text-center text-sm border rounded px-1 py-1.5" placeholder="—" />
                     </td>
-                    <td className="py-1 text-center">
-                      {fill !== null && <span className={`text-xs font-medium ${getFillClass(fill)}`}>{fill}%</span>}
-                    </td>
                     <td className="py-1 px-1">
                       <input type="number" value={s.hardness ?? ''}
                         onChange={e => updateSpec(idx, 'hardness', e.target.value)}
                         className="w-full text-center text-sm border rounded px-1 py-1.5" placeholder="—" />
                     </td>
                     <td className="py-1 text-center">
+                      {hasDefect ? (
+                        <span className="text-xs font-medium px-2 py-0.5 rounded"
+                          style={{ background: SEV_COLORS[maxSev], color: SEV_TEXT[maxSev] }}>
+                          {SEV_LABELS[maxSev]}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-green-500">양호</span>
+                      )}
+                    </td>
+                    <td className="py-1 text-center">
                       <button onClick={() => setZoneEditIdx(zoneEditIdx === idx ? null : idx)}
-                        className={`text-lg ${hasZones ? 'text-red-400' : 'text-green-400'}`}>
-                        {hasZones ? '⚠' : '✓'}
+                        className={`text-lg ${hasDefect ? 'text-red-400' : 'text-green-400'}`}>
+                        {hasDefect ? '⚠' : '✓'}
                       </button>
                     </td>
                   </tr>
@@ -269,34 +287,53 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
         </button>
       </div>
 
-      {/* 구역맵 */}
+      {/* 구역맵 심각도 */}
       {zoneEditIdx !== null && (
         <div className="card">
-          <div className="text-xs text-gray-400 mb-2">시편 #{specimens[zoneEditIdx]?.specimen_no} — 미충진 구역</div>
-          <div className="grid grid-cols-3 gap-1.5 w-44 mx-auto">
+          <div className="text-xs text-gray-400 mb-1">
+            시편 #{specimens[zoneEditIdx]?.specimen_no} — 구역 터치로 심각도 순환
+          </div>
+          <div className="flex gap-2 mb-3 text-[10px] text-gray-400 justify-center">
+            <span>터치: 없음 → </span>
+            <span style={{ background: SEV_COLORS[1], color: SEV_TEXT[1], padding: '1px 6px', borderRadius: 4 }}>경미(1)</span>
+            <span> → </span>
+            <span style={{ background: SEV_COLORS[2], color: SEV_TEXT[2], padding: '1px 6px', borderRadius: 4 }}>보통(2)</span>
+            <span> → </span>
+            <span style={{ background: SEV_COLORS[3], color: SEV_TEXT[3], padding: '1px 6px', borderRadius: 4 }}>심각(3)</span>
+            <span> → 없음</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 w-48 mx-auto">
             {ZONE_LABELS.map((label, zi) => {
-              const isHit = (specimens[zoneEditIdx]?.defect_zones || []).includes(zi);
+              const sev = (specimens[zoneEditIdx]?.defect_severity || {})[zi] || 0;
               return (
-                <button key={zi} onClick={() => toggleZone(zoneEditIdx, zi)}
-                  className={`zone-cell ${isHit ? 'hit' : ''}`}>{label}</button>
+                <button key={zi} onClick={() => cycleZoneSeverity(zoneEditIdx, zi)}
+                  className="aspect-square flex flex-col items-center justify-center rounded-lg border transition-all text-xs"
+                  style={{
+                    background: sev > 0 ? SEV_COLORS[sev] : '#f9fafb',
+                    color: sev > 0 ? SEV_TEXT[sev] : '#9ca3af',
+                    borderColor: sev > 0 ? SEV_TEXT[sev] + '40' : '#e5e7eb',
+                  }}>
+                  <span>{label}</span>
+                  {sev > 0 && <span className="font-semibold text-sm">{sev}</span>}
+                </button>
               );
             })}
           </div>
-          <div className="text-center mt-2">
+          <div className="text-center mt-3">
             <button onClick={() => setZoneEditIdx(null)} className="btn btn-sm btn-outline">닫기</button>
           </div>
         </div>
       )}
 
-      {/* 사진 */}
+      {/* 사진 + 코멘트 */}
       <div className="card">
-        <div className="text-xs text-gray-500 font-medium mb-2">사진 첨부</div>
+        <div className="text-xs text-gray-500 font-medium mb-2">사진 · 코멘트</div>
         {photoPreview && (
           <div className="mb-2">
             <img src={photoPreview} alt="로트 사진" className="w-full rounded-lg max-h-48 object-cover" />
           </div>
         )}
-        <div className="flex gap-2">
+        <div className="flex gap-2 mb-2">
           <label className="btn btn-sm btn-outline cursor-pointer flex-1 text-center">
             📷 촬영
             <input type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} className="hidden" />
@@ -306,17 +343,20 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
             <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" />
           </label>
         </div>
+        <textarea
+          value={photoMemo}
+          onChange={e => setPhotoMemo(e.target.value)}
+          placeholder="사진으로 안 보이는 불량 내용, 현장 메모 등을 기록하세요"
+          className="w-full border rounded-lg px-3 py-2 text-sm resize-none"
+          rows={2}
+        />
       </div>
 
       {/* 요약 */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <div className="metric-card">
-          <div className="text-lg font-semibold">{avgWeight}g</div>
+          <div className="text-lg font-semibold">{avgWeight || '—'}g</div>
           <div className="text-[10px] text-gray-400">평균 중량</div>
-        </div>
-        <div className="metric-card">
-          <div className="text-lg font-semibold">{avgFill}%</div>
-          <div className="text-[10px] text-gray-400">평균 충진율</div>
         </div>
         <div className="metric-card">
           <div className="text-lg font-semibold">{avgHard}</div>
@@ -339,6 +379,12 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
           <div className="text-[10px] text-gray-400">미충진 시편</div>
         </div>
       </div>
+      {totalSeverity > 0 && (
+        <div className="metric-card">
+          <div className="text-lg font-semibold text-red-500">{totalSeverity}</div>
+          <div className="text-[10px] text-gray-400">심각도 총합 (낮을수록 양호)</div>
+        </div>
+      )}
 
       <button onClick={saveAll} disabled={saving} className="btn btn-primary w-full py-3 text-base">
         {saving ? '저장 중...' : '💾 로트 저장'}
