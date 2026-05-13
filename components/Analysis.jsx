@@ -197,8 +197,8 @@ export default function Analysis({ runs, factors, molds, boilers }) {
                   responsive: true, maintainAspectRatio: false,
                   plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } },
                   scales: {
-                    x: { title: { display: true, text: '금형온도 상 (℃)', font: { size: 11 } } },
-                    y: { title: { display: true, text: '충진율 (%)', font: { size: 11 } }, min: 85, max: 105 },
+                    x: { type: 'linear', title: { display: true, text: '금형온도 상 (℃)', font: { size: 11 } }, ticks: { callback: v => v + '℃' } },
+                    y: { type: 'linear', title: { display: true, text: '충진율 (%)', font: { size: 11 } }, ticks: { callback: v => v + '%' } },
                   },
                 }}
               />
@@ -229,8 +229,8 @@ export default function Analysis({ runs, factors, molds, boilers }) {
                   responsive: true, maintainAspectRatio: false,
                   plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } },
                   scales: {
-                    x: { title: { display: true, text: '금형온도 하 (℃)', font: { size: 11 } } },
-                    y: { title: { display: true, text: '충진율 (%)', font: { size: 11 } }, min: 85, max: 105 },
+                    x: { type: 'linear', title: { display: true, text: '금형온도 하 (℃)', font: { size: 11 } }, ticks: { callback: v => v + '℃' } },
+                    y: { type: 'linear', title: { display: true, text: '충진율 (%)', font: { size: 11 } }, ticks: { callback: v => v + '%' } },
                   },
                 }}
               />
@@ -242,14 +242,21 @@ export default function Analysis({ runs, factors, molds, boilers }) {
             <h3 className="text-xs text-gray-500 mb-3">충진율 분포</h3>
             <div style={{ height: 220 }}>
               {(() => {
-                const bins = [90, 92, 94, 96, 98, 100, 102];
-                const binLabels = bins.slice(0, -1).map((b, i) => `${b}-${bins[i + 1]}%`);
-                const counts = binLabels.map(() => 0);
+                const fillRates = [];
                 allSpecs.forEach(s => {
                   if (!s.weight) return;
                   const run = runs.find(r => r.id === s.run_id);
                   if (!run) return;
-                  const fill = s.weight / run.ref_weight * 100;
+                  fillRates.push(s.weight / run.ref_weight * 100);
+                });
+                if (fillRates.length === 0) return <div className="text-center text-gray-400 text-sm py-8">데이터 없음</div>;
+                const minF = Math.floor(Math.min(...fillRates) / 2) * 2;
+                const maxF = Math.ceil(Math.max(...fillRates) / 2) * 2 + 2;
+                const bins = [];
+                for (let v = minF; v <= maxF; v += 2) bins.push(v);
+                const binLabels = bins.slice(0, -1).map((b, i) => `${b}-${bins[i + 1]}%`);
+                const counts = binLabels.map(() => 0);
+                fillRates.forEach(fill => {
                   for (let i = 0; i < bins.length - 1; i++) {
                     if (fill >= bins[i] && fill < bins[i + 1]) { counts[i]++; break; }
                   }
@@ -393,7 +400,7 @@ export default function Analysis({ runs, factors, molds, boilers }) {
                         tooltip: { callbacks: { label: ctx => `${ctx.raw}% (${grouped[ctx.label].count}개)` } },
                       },
                       scales: {
-                        x: { min: 85, max: 105, title: { display: true, text: '평균 충진율 (%)', font: { size: 11 } } },
+                        x: { title: { display: true, text: '평균 충진율 (%)', font: { size: 11 } }, ticks: { callback: v => v + '%' } },
                         y: { ticks: { font: { size: 11 } } },
                       },
                     }}
@@ -427,7 +434,7 @@ export default function Analysis({ runs, factors, molds, boilers }) {
                   responsive: true, maintainAspectRatio: false,
                   plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.raw + '%' } } },
                   scales: {
-                    y: { min: 85, max: 105, ticks: { callback: v => v + '%' } },
+                    y: { ticks: { callback: v => v + '%' } },
                     x: { ticks: { font: { size: 10 }, maxRotation: 45 } },
                   },
                 }}
