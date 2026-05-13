@@ -1,12 +1,12 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   Chart as ChartJS,
   CategoryScale, LinearScale, BarElement, PointElement, LineElement,
   Title, Tooltip, Legend, Filler
 } from 'chart.js';
-import { Bar, Scatter, Line } from 'react-chartjs-2';
+import { Bar, Scatter } from 'react-chartjs-2';
 
 ChartJS.register(
   CategoryScale, LinearScale, BarElement, PointElement, LineElement,
@@ -14,6 +14,7 @@ ChartJS.register(
 );
 
 const ZONE_LABELS = ['좌상', '상', '우상', '좌중', '중앙', '우중', '좌하', '하', '우하'];
+const SEV_LABELS = ['없음', '경미', '보통', '심각'];
 const COLORS = ['#534AB7', '#1D9E75', '#D85A30', '#378ADD', '#D4537E', '#EF9F27', '#639922', '#E24B4A'];
 
 export default function Analysis({ runs, factors, molds, boilers }) {
@@ -22,9 +23,7 @@ export default function Analysis({ runs, factors, molds, boilers }) {
   const [view, setView] = useState('history');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadAllData();
-  }, [runs]);
+  useEffect(() => { loadAllData(); }, [runs]);
 
   async function loadAllData() {
     setLoading(true);
@@ -44,13 +43,28 @@ export default function Analysis({ runs, factors, molds, boilers }) {
     setLoading(false);
   }
 
-  function getRunSpecs(runId) {
-    return allSpecs.filter(s => s.run_id === runId);
+  function getRunSpecs(runId) { return allSpecs.filter(s => s.run_id === runId); }
+
+  function getSpecSeveritySum(spec) {
+    const sev = spec.defect_severity || {};
+    return Object.values(sev).reduce((a, b) => a + b, 0);
   }
 
-  function calcFillRate(weight, refWeight) {
-    if (!weight || !refWeight) return null;
-    return parseFloat((weight / refWeight * 100).toFixed(1));
+  function getSpecMaxSeverity(spec) {
+    const sev = spec.defect_severity || {};
+    const vals = Object.values(sev);
+    return vals.length ? Math.max(...vals) : 0;
+  }
+
+  function getRunDefectRate(run) {
+    const specs = getRunSpecs(run.id);
+    if (!specs.length) return 0;
+    const defects = specs.filter(s => getSpecMaxSeverity(s) > 0).length;
+    return Math.round(defects / specs.length * 100);
+  }
+
+  function getRunSeveritySum(run) {
+    return getRunSpecs(run.id).reduce((a, s) => a + getSpecSeveritySum(s), 0);
   }
 
   const views = [
@@ -60,28 +74,22 @@ export default function Analysis({ runs, factors, molds, boilers }) {
     { id: 'factor', label: '인자비교' },
   ];
 
-  if (loading) {
-    return <div className="text-center py-12 text-gray-400 text-sm">데이터 로딩 중...</div>;
-  }
+  if (loading) return <div className="text-center py-12 text-gray-400 text-sm">로딩 중...</div>;
+
+  const totalDefects = allSpecs.filter(s => getSpecMaxSeverity(s) > 0).length;
+  const totalSeverity = allSpecs.reduce((a, s) => a + getSpecSeveritySum(s), 0);
 
   return (
     <div className="space-y-4">
-      {/* 서브탭 */}
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
         {views.map(v => (
-          <button
-            key={v.id}
-            onClick={() => setView(v.id)}
+          <button key={v.id} onClick={() => setView(v.id)}
             className={`flex-1 py-2 text-xs rounded-md transition-colors ${
               view === v.id ? 'bg-white text-gray-800 font-medium shadow-sm' : 'text-gray-400'
-            }`}
-          >
-            {v.label}
-          </button>
+            }`}>{v.label}</button>
         ))}
       </div>
 
-      {/* 전체 요약 카드 */}
       <div className="grid grid-cols-4 gap-2">
         <div className="metric-card">
           <div className="text-lg font-semibold">{runs.length}</div>
@@ -92,37 +100,23 @@ export default function Analysis({ runs, factors, molds, boilers }) {
           <div className="text-[10px] text-gray-400">총 시편</div>
         </div>
         <div className="metric-card">
-          <div className="text-lg font-semibold">
-            {allSpecs.length > 0 && runs.length > 0
-              ? (allSpecs.filter(s => s.weight).reduce((a, s) => {
-                  const run = runs.find(r => r.id === s.run_id);
-                  return a + (s.weight / (run?.ref_weight || 580) * 100);
-                }, 0) / allSpecs.filter(s => s.weight).length).toFixed(1)
-              : '0'}%
-          </div>
-          <div className="text-[10px] text-gray-400">평균 충진율</div>
+          <div className="text-lg font-semibold text-red-500">{totalDefects}</div>
+          <div className="text-[10px] text-gray-400">미충진 시편</div>
         </div>
         <div className="metric-card">
-          <div className="text-lg font-semibold text-red-500">
-            {allSpecs.filter(s => (s.defect_zones || []).length > 0).length}
-          </div>
-          <div className="text-[10px] text-gray-400">미충진 시편</div>
+          <div className="text-lg font-semibold text-red-500">{totalSeverity}</div>
+          <div className="text-[10px] text-gray-400">심각도 총합</div>
         </div>
       </div>
 
-      {/* 히스토리 뷰 */}
+      {/* 히스토리 */}
       {view === 'history' && (
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-gray-700">실험 히스토리</h3>
-          {runs.map((run, ri) => {
+          {runs.map(run => {
             const specs = getRunSpecs(run.id);
-            const filled = specs.filter(s => s.weight);
-            const avgFill = filled.length
-              ? (filled.reduce((a, s) => a + s.weight / run.ref_weight * 100, 0) / filled.length).toFixed(1)
-              : '—';
-            const defects = specs.filter(s => (s.defect_zones || []).length > 0).length;
+            const defectRate = getRunDefectRate(run);
+            const sevSum = getRunSeveritySum(run);
             const fixed = fixedMap[run.id] || [];
-
             return (
               <div key={run.id} className="card">
                 <div className="flex justify-between items-start mb-2">
@@ -135,15 +129,15 @@ export default function Analysis({ runs, factors, molds, boilers }) {
                     <div className="text-xs text-gray-400 mt-1">
                       {new Date(run.created_at).toLocaleDateString('ko-KR')}
                       {run.boiler_no && ` · ${run.boiler_no}번 보일러`}
+                      {run.temp_upper && ` · 상 ${run.temp_upper}℃`}
+                      {run.temp_lower && ` / 하 ${run.temp_lower}℃`}
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className={`text-xl font-semibold ${
-                      parseFloat(avgFill) >= 98 ? 'fill-ok' : parseFloat(avgFill) >= 95 ? 'fill-mid' : 'fill-low'
-                    }`}>
-                      {avgFill}%
+                    <div className={`text-xl font-semibold ${defectRate > 50 ? 'text-red-500' : defectRate > 20 ? 'text-amber-500' : 'text-green-500'}`}>
+                      {defectRate}%
                     </div>
-                    <div className="text-[10px] text-gray-400">충진율</div>
+                    <div className="text-[10px] text-gray-400">미충진률</div>
                   </div>
                 </div>
                 <div className="flex gap-1 flex-wrap mb-2">
@@ -156,124 +150,89 @@ export default function Analysis({ runs, factors, molds, boilers }) {
                 </div>
                 <div className="flex gap-4 text-xs text-gray-400">
                   <span>시편 {specs.length}개</span>
-                  <span>미충진 {defects}개</span>
-                  {filled.length > 0 && (
-                    <span>평균경도 {(specs.filter(s => s.hardness).reduce((a, s) => a + s.hardness, 0) / specs.filter(s => s.hardness).length || 0).toFixed(1)}</span>
-                  )}
+                  <span>미충진 {specs.filter(s => getSpecMaxSeverity(s) > 0).length}개</span>
+                  <span>심각도합 {sevSum}</span>
                 </div>
+                {run.photo_memo && (
+                  <div className="mt-2 text-xs text-gray-500 bg-gray-50 rounded p-2">💬 {run.photo_memo}</div>
+                )}
               </div>
             );
           })}
-          {runs.length === 0 && (
-            <div className="text-center py-8 text-gray-400 text-sm">실험 데이터가 없습니다</div>
-          )}
+          {runs.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">실험 데이터가 없습니다</div>}
         </div>
       )}
 
-      {/* 산포도 뷰 */}
+      {/* 산포도 - 온도 vs 미충진률 */}
       {view === 'scatter' && (
         <div className="space-y-4">
-          {/* 온도(상) vs 충진율 */}
           <div className="card">
-            <h3 className="text-xs text-gray-500 mb-3">금형온도(상) × 충진율</h3>
+            <h3 className="text-xs text-gray-500 mb-3">금형온도(상) × 미충진률</h3>
             <div style={{ height: 260 }}>
               <Scatter
                 data={{
-                  datasets: runs.filter(r => r.temp_upper).map((run, i) => {
-                    const specs = getRunSpecs(run.id).filter(s => s.weight);
-                    return {
-                      label: `${run.mold_name} (${run.active_factor_value || '대조군'})`,
-                      data: specs.map(s => ({
-                        x: run.temp_upper,
-                        y: calcFillRate(s.weight, run.ref_weight),
-                      })),
-                      backgroundColor: COLORS[i % COLORS.length] + '99',
-                      borderColor: COLORS[i % COLORS.length],
-                      pointRadius: 5,
-                    };
-                  }),
+                  datasets: runs.filter(r => r.temp_upper).map((run, i) => ({
+                    label: `${run.mold_name} (${run.active_factor_value || '대조군'})`,
+                    data: [{ x: run.temp_upper, y: getRunDefectRate(run) }],
+                    backgroundColor: COLORS[i % COLORS.length] + '99',
+                    borderColor: COLORS[i % COLORS.length],
+                    pointRadius: 8,
+                  })),
                 }}
                 options={{
                   responsive: true, maintainAspectRatio: false,
                   plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } },
                   scales: {
                     x: { type: 'linear', title: { display: true, text: '금형온도 상 (℃)', font: { size: 11 } }, ticks: { callback: v => v + '℃' } },
-                    y: { type: 'linear', title: { display: true, text: '충진율 (%)', font: { size: 11 } }, ticks: { callback: v => v + '%' } },
+                    y: { type: 'linear', title: { display: true, text: '미충진률 (%)', font: { size: 11 } }, min: 0, ticks: { callback: v => v + '%' } },
                   },
                 }}
               />
             </div>
           </div>
 
-          {/* 온도(하) vs 충진율 */}
           <div className="card">
-            <h3 className="text-xs text-gray-500 mb-3">금형온도(하) × 충진율</h3>
+            <h3 className="text-xs text-gray-500 mb-3">금형온도(하) × 미충진률</h3>
             <div style={{ height: 260 }}>
               <Scatter
                 data={{
-                  datasets: runs.filter(r => r.temp_lower).map((run, i) => {
-                    const specs = getRunSpecs(run.id).filter(s => s.weight);
-                    return {
-                      label: `${run.mold_name} (${run.active_factor_value || '대조군'})`,
-                      data: specs.map(s => ({
-                        x: run.temp_lower,
-                        y: calcFillRate(s.weight, run.ref_weight),
-                      })),
-                      backgroundColor: COLORS[i % COLORS.length] + '99',
-                      borderColor: COLORS[i % COLORS.length],
-                      pointRadius: 5,
-                    };
-                  }),
+                  datasets: runs.filter(r => r.temp_lower).map((run, i) => ({
+                    label: `${run.mold_name} (${run.active_factor_value || '대조군'})`,
+                    data: [{ x: run.temp_lower, y: getRunDefectRate(run) }],
+                    backgroundColor: COLORS[i % COLORS.length] + '99',
+                    borderColor: COLORS[i % COLORS.length],
+                    pointRadius: 8,
+                  })),
                 }}
                 options={{
                   responsive: true, maintainAspectRatio: false,
                   plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } },
                   scales: {
                     x: { type: 'linear', title: { display: true, text: '금형온도 하 (℃)', font: { size: 11 } }, ticks: { callback: v => v + '℃' } },
-                    y: { type: 'linear', title: { display: true, text: '충진율 (%)', font: { size: 11 } }, ticks: { callback: v => v + '%' } },
+                    y: { type: 'linear', title: { display: true, text: '미충진률 (%)', font: { size: 11 } }, min: 0, ticks: { callback: v => v + '%' } },
                   },
                 }}
               />
             </div>
           </div>
 
-          {/* 충진율 분포 히스토그램 */}
+          {/* 심각도 분포 */}
           <div className="card">
-            <h3 className="text-xs text-gray-500 mb-3">충진율 분포</h3>
-            <div style={{ height: 220 }}>
+            <h3 className="text-xs text-gray-500 mb-3">심각도 분포</h3>
+            <div style={{ height: 200 }}>
               {(() => {
-                const fillRates = [];
-                allSpecs.forEach(s => {
-                  if (!s.weight) return;
-                  const run = runs.find(r => r.id === s.run_id);
-                  if (!run) return;
-                  fillRates.push(s.weight / run.ref_weight * 100);
-                });
-                if (fillRates.length === 0) return <div className="text-center text-gray-400 text-sm py-8">데이터 없음</div>;
-                const minF = Math.floor(Math.min(...fillRates) / 2) * 2;
-                const maxF = Math.ceil(Math.max(...fillRates) / 2) * 2 + 2;
-                const bins = [];
-                for (let v = minF; v <= maxF; v += 2) bins.push(v);
-                const binLabels = bins.slice(0, -1).map((b, i) => `${b}-${bins[i + 1]}%`);
-                const counts = binLabels.map(() => 0);
-                fillRates.forEach(fill => {
-                  for (let i = 0; i < bins.length - 1; i++) {
-                    if (fill >= bins[i] && fill < bins[i + 1]) { counts[i]++; break; }
-                  }
-                });
+                const counts = [0, 0, 0, 0];
+                allSpecs.forEach(s => { counts[getSpecMaxSeverity(s)]++; });
                 return (
                   <Bar
                     data={{
-                      labels: binLabels,
-                      datasets: [{ data: counts, backgroundColor: '#534AB799', borderColor: '#534AB7', borderWidth: 1, borderRadius: 3 }],
+                      labels: SEV_LABELS,
+                      datasets: [{ data: counts, backgroundColor: ['#d1fae5', '#FEF3C7', '#FED7AA', '#FECACA'], borderColor: ['#059669', '#D97706', '#EA580C', '#DC2626'], borderWidth: 1, borderRadius: 4, barPercentage: 0.6 }],
                     }}
                     options={{
                       responsive: true, maintainAspectRatio: false,
                       plugins: { legend: { display: false } },
-                      scales: {
-                        y: { beginAtZero: true, title: { display: true, text: '시편 수', font: { size: 11 } }, ticks: { stepSize: 1 } },
-                        x: { ticks: { font: { size: 10 } } },
-                      },
+                      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
                     }}
                   />
                 );
@@ -283,77 +242,80 @@ export default function Analysis({ runs, factors, molds, boilers }) {
         </div>
       )}
 
-      {/* 구역 분석 뷰 */}
+      {/* 구역 분석 - 심각도 합산 히트맵 */}
       {view === 'zone' && (
         <div className="space-y-4">
           <div className="card">
-            <h3 className="text-xs text-gray-500 mb-3">구역별 미충진 빈도 (전체 Run 누적)</h3>
+            <h3 className="text-xs text-gray-500 mb-3">구역별 심각도 합산 (전체 Run)</h3>
             {(() => {
-              const zoneCounts = new Array(9).fill(0);
+              const zoneSums = new Array(9).fill(0);
               allSpecs.forEach(s => {
-                (s.defect_zones || []).forEach(z => { zoneCounts[z]++; });
+                const sev = s.defect_severity || {};
+                Object.entries(sev).forEach(([z, v]) => { zoneSums[Number(z)] += v; });
               });
-              const maxCount = Math.max(1, ...zoneCounts);
+              const maxSum = Math.max(1, ...zoneSums);
               return (
-                <div className="grid grid-cols-3 gap-2 w-52 mx-auto">
-                  {ZONE_LABELS.map((label, i) => {
-                    const count = zoneCounts[i];
-                    const intensity = count / maxCount;
-                    const bg = count === 0
-                      ? '#E1F5EE'
-                      : `rgba(226, 75, 74, ${0.15 + intensity * 0.65})`;
-                    const textColor = count === 0 ? '#085041' : intensity > 0.5 ? '#fff' : '#791F1F';
-                    return (
-                      <div
-                        key={i}
-                        className="aspect-square flex flex-col items-center justify-center rounded-lg"
-                        style={{ background: bg, color: textColor }}
-                      >
-                        <div className="text-xs">{label}</div>
-                        <div className="text-lg font-semibold">{count}</div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <>
+                  <div className="grid grid-cols-3 gap-2 w-52 mx-auto">
+                    {ZONE_LABELS.map((label, i) => {
+                      const sum = zoneSums[i];
+                      const intensity = sum / maxSum;
+                      const bg = sum === 0
+                        ? '#d1fae5'
+                        : `rgba(220, 38, 38, ${0.12 + intensity * 0.68})`;
+                      const textColor = sum === 0 ? '#065f46' : intensity > 0.5 ? '#fff' : '#991b1b';
+                      return (
+                        <div key={i} className="aspect-square flex flex-col items-center justify-center rounded-lg"
+                          style={{ background: bg, color: textColor }}>
+                          <div className="text-xs">{label}</div>
+                          <div className="text-xl font-semibold">{sum}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex justify-center gap-4 mt-3 text-[10px] text-gray-400">
+                    <span className="flex items-center gap-1">
+                      <span className="w-3 h-3 rounded" style={{ background: '#d1fae5' }}></span> 0
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-3 h-3 rounded" style={{ background: 'rgba(220,38,38,0.25)' }}></span> 낮음
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-3 h-3 rounded" style={{ background: 'rgba(220,38,38,0.8)' }}></span> 높음
+                    </span>
+                  </div>
+                </>
               );
             })()}
-            <div className="flex justify-center gap-4 mt-3 text-[10px] text-gray-400">
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded" style={{ background: '#E1F5EE' }}></span> 0건
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded" style={{ background: 'rgba(226,75,74,0.3)' }}></span> 적음
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded" style={{ background: 'rgba(226,75,74,0.8)' }}></span> 많음
-              </span>
-            </div>
           </div>
 
-          {/* Run별 구역 비교 */}
+          {/* Run별 비교 */}
           <div className="card">
-            <h3 className="text-xs text-gray-500 mb-3">Run별 구역 히트맵 비교</h3>
-            <div className="space-y-4">
+            <h3 className="text-xs text-gray-500 mb-3">Run별 구역 심각도</h3>
+            <div className="space-y-3">
               {runs.map(run => {
                 const specs = getRunSpecs(run.id);
-                const zoneCounts = new Array(9).fill(0);
-                specs.forEach(s => { (s.defect_zones || []).forEach(z => { zoneCounts[z]++; }); });
-                const maxC = Math.max(1, ...zoneCounts);
+                const zoneSums = new Array(9).fill(0);
+                specs.forEach(s => {
+                  const sev = s.defect_severity || {};
+                  Object.entries(sev).forEach(([z, v]) => { zoneSums[Number(z)] += v; });
+                });
+                const maxS = Math.max(1, ...zoneSums);
                 return (
                   <div key={run.id}>
                     <div className="text-xs text-gray-500 mb-1">
                       {run.mold_name} · {run.active_factor_name}: {run.active_factor_value}
+                      {run.memo && ` · ${run.memo}`}
                     </div>
                     <div className="grid grid-cols-9 gap-1">
                       {ZONE_LABELS.map((label, i) => {
-                        const c = zoneCounts[i];
-                        const bg = c === 0 ? '#f3f4f6' : `rgba(226,75,74,${0.2 + (c / maxC) * 0.6})`;
+                        const s = zoneSums[i];
+                        const bg = s === 0 ? '#f3f4f6' : `rgba(220,38,38,${0.15 + (s / maxS) * 0.65})`;
                         return (
                           <div key={i} className="text-center py-1.5 rounded text-[10px]"
-                            style={{ background: bg, color: c > 0 ? '#fff' : '#9ca3af' }}
-                            title={`${label}: ${c}건`}
-                          >
-                            {c || '·'}
+                            style={{ background: bg, color: s > 0 ? (s / maxS > 0.5 ? '#fff' : '#991b1b') : '#9ca3af' }}
+                            title={`${label}: ${s}`}>
+                            {s || '·'}
                           </div>
                         );
                       })}
@@ -366,11 +328,11 @@ export default function Analysis({ runs, factors, molds, boilers }) {
         </div>
       )}
 
-      {/* 인자 비교 뷰 */}
+      {/* 인자 비교 */}
       {view === 'factor' && (
         <div className="space-y-4">
           <div className="card">
-            <h3 className="text-xs text-gray-500 mb-3">실험 변수값별 평균 충진율 비교</h3>
+            <h3 className="text-xs text-gray-500 mb-3">실험 변수값별 미충진률</h3>
             <div style={{ height: 280 }}>
               {(() => {
                 const grouped = {};
@@ -378,29 +340,27 @@ export default function Analysis({ runs, factors, molds, boilers }) {
                   const key = run.active_factor_name
                     ? `${run.active_factor_name}: ${run.active_factor_value}`
                     : '대조군';
-                  const specs = getRunSpecs(run.id).filter(s => s.weight);
-                  if (specs.length === 0) return;
-                  const avgFill = specs.reduce((a, s) => a + s.weight / run.ref_weight * 100, 0) / specs.length;
-                  grouped[key] = { avg: parseFloat(avgFill.toFixed(1)), count: specs.length };
+                  grouped[key] = { rate: getRunDefectRate(run), sevSum: getRunSeveritySum(run), count: getRunSpecs(run.id).length };
                 });
                 const labels = Object.keys(grouped);
-                const data = labels.map(k => grouped[k].avg);
-                const bgColors = data.map(v => v >= 98 ? '#1D9E75' : v >= 95 ? '#EF9F27' : '#E24B4A');
+                const data = labels.map(k => grouped[k].rate);
+                const bgColors = data.map(v => v > 50 ? '#FECACA' : v > 20 ? '#FED7AA' : '#d1fae5');
+                const borderColors = data.map(v => v > 50 ? '#DC2626' : v > 20 ? '#EA580C' : '#059669');
                 return (
                   <Bar
                     data={{
                       labels,
-                      datasets: [{ data, backgroundColor: bgColors, borderRadius: 4, barPercentage: 0.6 }],
+                      datasets: [{ data, backgroundColor: bgColors, borderColor: borderColors, borderWidth: 1, borderRadius: 4, barPercentage: 0.6 }],
                     }}
                     options={{
                       responsive: true, maintainAspectRatio: false,
                       indexAxis: 'y',
                       plugins: {
                         legend: { display: false },
-                        tooltip: { callbacks: { label: ctx => `${ctx.raw}% (${grouped[ctx.label].count}개)` } },
+                        tooltip: { callbacks: { label: ctx => `미충진률 ${ctx.raw}% · 심각도합 ${grouped[ctx.label].sevSum} (${grouped[ctx.label].count}개)` } },
                       },
                       scales: {
-                        x: { title: { display: true, text: '평균 충진율 (%)', font: { size: 11 } }, ticks: { callback: v => v + '%' } },
+                        x: { min: 0, max: 100, title: { display: true, text: '미충진률 (%)', font: { size: 11 } }, ticks: { callback: v => v + '%' } },
                         y: { ticks: { font: { size: 11 } } },
                       },
                     }}
@@ -410,31 +370,24 @@ export default function Analysis({ runs, factors, molds, boilers }) {
             </div>
           </div>
 
-          {/* Run별 충진율 바 차트 */}
           <div className="card">
-            <h3 className="text-xs text-gray-500 mb-3">Run별 평균 충진율</h3>
+            <h3 className="text-xs text-gray-500 mb-3">Run별 심각도 총합</h3>
             <div style={{ height: 220 }}>
               <Bar
                 data={{
                   labels: runs.map(r => r.memo || `${r.mold_name} ${r.active_factor_value || ''}`),
                   datasets: [{
-                    data: runs.map(run => {
-                      const specs = getRunSpecs(run.id).filter(s => s.weight);
-                      if (!specs.length) return 0;
-                      return parseFloat((specs.reduce((a, s) => a + s.weight / run.ref_weight * 100, 0) / specs.length).toFixed(1));
-                    }),
+                    data: runs.map(r => getRunSeveritySum(r)),
                     backgroundColor: runs.map((_, i) => COLORS[i % COLORS.length] + '99'),
                     borderColor: runs.map((_, i) => COLORS[i % COLORS.length]),
-                    borderWidth: 1,
-                    borderRadius: 4,
-                    barPercentage: 0.6,
+                    borderWidth: 1, borderRadius: 4, barPercentage: 0.6,
                   }],
                 }}
                 options={{
                   responsive: true, maintainAspectRatio: false,
-                  plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.raw + '%' } } },
+                  plugins: { legend: { display: false } },
                   scales: {
-                    y: { ticks: { callback: v => v + '%' } },
+                    y: { beginAtZero: true, title: { display: true, text: '심각도 총합', font: { size: 11 } } },
                     x: { ticks: { font: { size: 10 }, maxRotation: 45 } },
                   },
                 }}
