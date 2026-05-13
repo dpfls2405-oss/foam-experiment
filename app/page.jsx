@@ -1,15 +1,14 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import MoldBoiler from '@/components/MoldBoiler';
+import Settings from '@/components/Settings';
 import FactorManager from '@/components/FactorManager';
 import RunList from '@/components/RunList';
 import LotInput from '@/components/LotInput';
 import Analysis from '@/components/Analysis';
 
-const PASS = '6720';
 const TABS = [
-  { id: 'mold', label: '금형·보일러', icon: '⚙️' },
+  { id: 'settings', label: '설정', icon: '⚙️' },
   { id: 'ofat', label: 'OFAT', icon: '🔒' },
   { id: 'runs', label: '실험목록', icon: '🧪' },
   { id: 'lot', label: '로트입력', icon: '📋' },
@@ -17,28 +16,15 @@ const TABS = [
 ];
 
 export default function Home() {
-  const [authed, setAuthed] = useState(false);
-  const [pw, setPw] = useState('');
   const [tab, setTab] = useState('runs');
   const [selectedRunId, setSelectedRunId] = useState(null);
 
-  // shared data
   const [factors, setFactors] = useState([]);
   const [molds, setMolds] = useState([]);
   const [boilers, setBoilers] = useState([]);
   const [runs, setRuns] = useState([]);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined' && sessionStorage.getItem('foam-exp-auth') === '1') {
-      setAuthed(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (authed) {
-      loadAll();
-    }
-  }, [authed]);
+  useEffect(() => { loadAll(); }, []);
 
   async function loadAll() {
     const [fRes, mRes, bRes, rRes] = await Promise.all([
@@ -53,44 +39,9 @@ export default function Home() {
     if (rRes.data) setRuns(rRes.data);
   }
 
-  function handleLogin(e) {
-    e.preventDefault();
-    if (pw === PASS) {
-      setAuthed(true);
-      sessionStorage.setItem('foam-exp-auth', '1');
-    } else {
-      alert('비밀번호가 틀립니다');
-    }
-  }
-
   function openLot(runId) {
     setSelectedRunId(runId);
     setTab('lot');
-  }
-
-  if (!authed) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <form onSubmit={handleLogin} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 w-full max-w-sm">
-          <div className="text-center mb-6">
-            <div className="text-3xl mb-2">🧪</div>
-            <h1 className="text-lg font-semibold text-gray-800">발포 실험 트래커</h1>
-            <p className="text-sm text-gray-400 mt-1">OFAT 실험 데이터 관리</p>
-          </div>
-          <input
-            type="password"
-            value={pw}
-            onChange={e => setPw(e.target.value)}
-            placeholder="비밀번호 입력"
-            className="w-full border border-gray-300 rounded-lg px-4 py-3 text-center text-lg mb-4 focus:outline-none focus:ring-2 focus:ring-purple-400"
-            autoFocus
-          />
-          <button type="submit" className="btn btn-primary w-full py-3 text-base">
-            로그인
-          </button>
-        </form>
-      </div>
-    );
   }
 
   return (
@@ -100,29 +51,22 @@ export default function Home() {
       </header>
 
       <main className="max-w-2xl mx-auto p-4">
-        {tab === 'mold' && (
-          <MoldBoiler molds={molds} boilers={boilers} onRefresh={loadAll} />
+        {tab === 'settings' && (
+          <Settings molds={molds} boilers={boilers} factors={factors} onRefresh={loadAll} />
         )}
         {tab === 'ofat' && (
           <FactorManager factors={factors} onRefresh={loadAll} />
         )}
         {tab === 'runs' && (
           <RunList
-            runs={runs}
-            factors={factors}
-            molds={molds}
-            boilers={boilers}
-            onRefresh={loadAll}
-            onOpenLot={openLot}
+            runs={runs} factors={factors} molds={molds} boilers={boilers}
+            onRefresh={loadAll} onOpenLot={openLot}
           />
         )}
         {tab === 'lot' && (
           <LotInput
-            runId={selectedRunId}
-            runs={runs}
-            factors={factors}
-            onRefresh={loadAll}
-            onSelectRun={setSelectedRunId}
+            runId={selectedRunId} runs={runs} factors={factors}
+            onRefresh={loadAll} onSelectRun={setSelectedRunId}
           />
         )}
         {tab === 'analysis' && (
