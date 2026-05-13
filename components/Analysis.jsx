@@ -179,12 +179,12 @@ export default function Analysis({ runs, factors, molds, boilers }) {
             <div style={{ height: 260 }}>
               <Scatter
                 data={{
-                  datasets: runs.map((run, i) => {
-                    const specs = getRunSpecs(run.id).filter(s => s.weight && s.temp_upper);
+                  datasets: runs.filter(r => r.temp_upper).map((run, i) => {
+                    const specs = getRunSpecs(run.id).filter(s => s.weight);
                     return {
                       label: `${run.mold_name} (${run.active_factor_value || '대조군'})`,
                       data: specs.map(s => ({
-                        x: s.temp_upper,
+                        x: run.temp_upper,
                         y: calcFillRate(s.weight, run.ref_weight),
                       })),
                       backgroundColor: COLORS[i % COLORS.length] + '99',
@@ -211,12 +211,12 @@ export default function Analysis({ runs, factors, molds, boilers }) {
             <div style={{ height: 260 }}>
               <Scatter
                 data={{
-                  datasets: runs.map((run, i) => {
-                    const specs = getRunSpecs(run.id).filter(s => s.weight && s.temp_lower);
+                  datasets: runs.filter(r => r.temp_lower).map((run, i) => {
+                    const specs = getRunSpecs(run.id).filter(s => s.weight);
                     return {
                       label: `${run.mold_name} (${run.active_factor_value || '대조군'})`,
                       data: specs.map(s => ({
-                        x: s.temp_lower,
+                        x: run.temp_lower,
                         y: calcFillRate(s.weight, run.ref_weight),
                       })),
                       backgroundColor: COLORS[i % COLORS.length] + '99',
