@@ -196,11 +196,12 @@ export default function Analysis({ runs, factors, molds, boilers }) {
             options={{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false},
             tooltip:{callbacks:{label:c=>`불량${c.raw}% ·미충진합${g[c.label].fs} ·표면${g[c.label].sc}건`}}},
             scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'}},y:{ticks:{font:{size:11}}}}}}/>);})()}</div></div>
-        <div className="card"><h3 className="text-xs text-gray-500 mb-3">Run별 미충진vs표면불량</h3><div style={{height:220}}>
+        <div className="card"><h3 className="text-xs text-gray-500 mb-3">Run별 단품 평균 미충진·표면불량</h3><div style={{height:220}}>
           <Bar data={{labels:runs.map(r=>r.memo||`${r.mold_name}${r.active_factor_value||''}`),
-            datasets:[{label:'미충진심각도합',data:runs.map(r=>gfs(r)),backgroundColor:'#FECACA',borderColor:'#DC2626',borderWidth:1,borderRadius:4},
-              {label:'표면불량건수',data:runs.map(r=>gsc(r)),backgroundColor:'#DBEAFE',borderColor:'#3B82F6',borderWidth:1,borderRadius:4}]}}
-            options={{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}},
+            datasets:[{label:'평균 미충진 심각도',data:runs.map(r=>{const n=gs(r.id).length;return n?+(gfs(r)/n).toFixed(1):0;}),backgroundColor:'#FECACA',borderColor:'#DC2626',borderWidth:1,borderRadius:4},
+              {label:'평균 표면불량',data:runs.map(r=>{const n=gs(r.id).length;return n?+(gsc(r)/n).toFixed(2):0;}),backgroundColor:'#DBEAFE',borderColor:'#3B82F6',borderWidth:1,borderRadius:4}]}}
+            options={{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}},
+            tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.raw} (시편${gs(runs[c.dataIndex].id).length}개)`}}},
             scales:{y:{beginAtZero:true},x:{ticks:{font:{size:10},maxRotation:45}}}}}/></div></div>
       </div>)}
 
