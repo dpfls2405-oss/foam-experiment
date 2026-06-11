@@ -23,6 +23,7 @@ export default function Analysis({ runs, factors, molds, boilers }) {
   const [allPhotos, setAllPhotos] = useState([]);
   const [view, setView] = useState('history');
   const [loading, setLoading] = useState(true);
+  const [zoneRunId, setZoneRunId] = useState('all');
 
   useEffect(() => { loadAll(); }, [runs]);
 
@@ -173,18 +174,46 @@ export default function Analysis({ runs, factors, molds, boilers }) {
       </div>)}
 
       {view==='zone'&&(<div className="space-y-4">
+        {/* Run 선택 필터 */}
+        <div className="card">
+          <p className="text-xs text-gray-400 mb-2">실험 Run 선택</p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={()=>setZoneRunId('all')}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${zoneRunId==='all'?'bg-gray-800 text-white border-gray-800':'bg-white text-gray-600 border-gray-200'}`}>
+              전체
+            </button>
+            {runs.map((r,i)=>(
+              <button key={r.id} onClick={()=>setZoneRunId(r.id)}
+                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${zoneRunId===r.id?'text-white border-transparent':'bg-white text-gray-600 border-gray-200'}`}
+                style={zoneRunId===r.id?{backgroundColor:COLORS[i%COLORS.length],borderColor:COLORS[i%COLORS.length]}:{}}>
+                Run{i+1} {r.memo||r.mold_name||''} {r.active_factor_value?`(${r.active_factor_value})`:''}
+              </button>
+            ))}
+          </div>
+          {zoneRunId!=='all'&&(()=>{const r=runs.find(x=>x.id===zoneRunId);if(!r)return null;const sp=gs(r.id);
+            return(<div className="mt-2 text-xs text-gray-500 flex gap-3">
+              <span>시편 {sp.length}개</span>
+              <span>불량률 {gdr(r)}%</span>
+              <span>미충진 합산 {gfs(r)}</span>
+              <span>표면불량 {gsc(r)}건</span>
+            </div>);})()}
+        </div>
         <div className="card"><h3 className="text-xs text-gray-500 mb-3">구역별 미충진 심각도 합산</h3>
-          {(()=>{const zs=new Array(9).fill(0);allSpecs.forEach(s=>{Object.entries(s.defect_severity||{}).forEach(([z,v])=>{zs[Number(z)]+=pz(v).fill;});});
-          const mx=Math.max(1,...zs);return(<div className="grid grid-cols-3 gap-2 w-52 mx-auto">{ZONE_LABELS.map((l,i)=>{const s=zs[i];const it=s/mx;
-            return(<div key={i} className="aspect-square flex flex-col items-center justify-center rounded-lg"
-              style={{background:s===0?'#d1fae5':`rgba(220,38,38,${0.12+it*0.68})`,color:s===0?'#065f46':it>0.5?'#fff':'#991b1b'}}>
-              <div className="text-xs">{l}</div><div className="text-xl font-semibold">{s}</div></div>);})}</div>);})()}</div>
+          {(()=>{
+            const specs=zoneRunId==='all'?allSpecs:allSpecs.filter(s=>s.run_id===zoneRunId);
+            const zs=new Array(9).fill(0);specs.forEach(s=>{Object.entries(s.defect_severity||{}).forEach(([z,v])=>{zs[Number(z)]+=pz(v).fill;});});
+            const mx=Math.max(1,...zs);return(<div className="grid grid-cols-3 gap-2 w-52 mx-auto">{ZONE_LABELS.map((l,i)=>{const s=zs[i];const it=s/mx;
+              return(<div key={i} className="aspect-square flex flex-col items-center justify-center rounded-lg"
+                style={{background:s===0?'#d1fae5':`rgba(220,38,38,${0.12+it*0.68})`,color:s===0?'#065f46':it>0.5?'#fff':'#991b1b'}}>
+                <div className="text-xs">{l}</div><div className="text-xl font-semibold">{s}</div></div>);})}</div>);})()}</div>
         <div className="card"><h3 className="text-xs text-gray-500 mb-3">구역별 표면불량 빈도</h3>
-          {(()=>{const zc=new Array(9).fill(0);allSpecs.forEach(s=>{Object.entries(s.defect_severity||{}).forEach(([z,v])=>{if(pz(v).surface>0)zc[Number(z)]++;});});
-          const mx=Math.max(1,...zc);return(<div className="grid grid-cols-3 gap-2 w-52 mx-auto">{ZONE_LABELS.map((l,i)=>{const c=zc[i];const it=c/mx;
-            return(<div key={i} className="aspect-square flex flex-col items-center justify-center rounded-lg"
-              style={{background:c===0?'#eff6ff':`rgba(59,130,246,${0.12+it*0.68})`,color:c===0?'#3b82f6':it>0.5?'#fff':'#1e40af'}}>
-              <div className="text-xs">{l}</div><div className="text-xl font-semibold">{c}</div></div>);})}</div>);})()}</div>
+          {(()=>{
+            const specs=zoneRunId==='all'?allSpecs:allSpecs.filter(s=>s.run_id===zoneRunId);
+            const zc=new Array(9).fill(0);specs.forEach(s=>{Object.entries(s.defect_severity||{}).forEach(([z,v])=>{if(pz(v).surface>0)zc[Number(z)]++;});});
+            const mx=Math.max(1,...zc);return(<div className="grid grid-cols-3 gap-2 w-52 mx-auto">{ZONE_LABELS.map((l,i)=>{const c=zc[i];const it=c/mx;
+              return(<div key={i} className="aspect-square flex flex-col items-center justify-center rounded-lg"
+                style={{background:c===0?'#eff6ff':`rgba(59,130,246,${0.12+it*0.68})`,color:c===0?'#3b82f6':it>0.5?'#fff':'#1e40af'}}>
+                <div className="text-xs">{l}</div><div className="text-xl font-semibold">{c}</div></div>);})}</div>);})()}</div>
       </div>)}
 
       {view==='factor'&&(<div className="space-y-4">
