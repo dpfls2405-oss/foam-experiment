@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { supabase, compressImage } from '@/lib/supabase';
 
 const ZONE_LABELS = ['좌상','상','우상','좌중','중앙','우중','좌하','하','우하'];
 const FILL_LABELS = ['없음','경미','보통','심각'];
@@ -66,9 +66,9 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
 
   async function handlePhotoUpload(e) {
     const file=e.target.files?.[0]; if(!file||!runId)return;
-    const ext=file.name.split('.').pop();
-    const path=`experiment/${runId}/${Date.now()}.${ext}`;
-    const{error}=await supabase.storage.from('foam-photos').upload(path,file,{upsert:true});
+    const body=await compressImage(file);
+    const path=`experiment/${runId}/${Date.now()}.jpg`;
+    const{error}=await supabase.storage.from('foam-photos').upload(path,body,{upsert:true,contentType:'image/jpeg'});
     if(error){alert('업로드 실패');return;}
     const{data:urlData}=supabase.storage.from('foam-photos').getPublicUrl(path);
     await supabase.from('exp_run_photos').insert({run_id:runId,photo_url:urlData.publicUrl,memo:newPhotoMemo||null});
