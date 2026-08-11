@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import Settings from '@/components/Settings';
 import FactorManager from '@/components/FactorManager';
 import RunList from '@/components/RunList';
@@ -27,16 +26,12 @@ export default function Home() {
   useEffect(() => { loadAll(); }, []);
 
   async function loadAll() {
-    const [fRes, mRes, bRes, rRes] = await Promise.all([
-      supabase.from('exp_factors').select('*').order('sort_order'),
-      supabase.from('exp_molds').select('*').order('mold_id'),
-      supabase.from('exp_boilers').select('*').order('boiler_no'),
-      supabase.from('exp_runs').select('*').order('created_at', { ascending: false }),
-    ]);
-    if (fRes.data) setFactors(fRes.data);
-    if (mRes.data) setMolds(mRes.data);
-    if (bRes.data) setBoilers(bRes.data);
-    if (rRes.data) setRuns(rRes.data);
+    const res = await fetch('/api/bootstrap');
+    const d = await res.json();
+    if (d.factors) setFactors(d.factors);
+    if (d.molds) setMolds(d.molds);
+    if (d.boilers) setBoilers(d.boilers);
+    if (d.runs) setRuns(d.runs);
   }
 
   function openLot(runId) {

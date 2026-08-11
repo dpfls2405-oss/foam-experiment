@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement, PointElement,
   LineElement, Title, Tooltip, Legend, Filler
@@ -30,13 +29,13 @@ export default function Analysis({ runs, factors, molds, boilers }) {
   async function loadAll() {
     setLoading(true);
     const [sp, fx, ph] = await Promise.all([
-      supabase.from('exp_specimens').select('*').order('specimen_no'),
-      supabase.from('exp_run_fixed_factors').select('*'),
-      supabase.from('exp_run_photos').select('*').order('created_at'),
+      fetch('/api/specimens').then(r=>r.json()),
+      fetch('/api/run-fixed-factors').then(r=>r.json()),
+      fetch('/api/run-photos').then(r=>r.json()),
     ]);
-    if(sp.data) setAllSpecs(sp.data);
-    if(fx.data){const m={};fx.data.forEach(f=>{if(!m[f.run_id])m[f.run_id]=[];m[f.run_id].push(f);});setFixedMap(m);}
-    if(ph.data) setAllPhotos(ph.data);
+    if(Array.isArray(sp)) setAllSpecs(sp);
+    if(Array.isArray(fx)){const m={};fx.forEach(f=>{if(!m[f.run_id])m[f.run_id]=[];m[f.run_id].push(f);});setFixedMap(m);}
+    if(Array.isArray(ph)) setAllPhotos(ph);
     setLoading(false);
   }
 

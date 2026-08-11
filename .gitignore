@@ -1,0 +1,12 @@
+/node_modules
+/.next/
+/out/
+/build
+
+# 접속정보 — 절대 커밋 금지
+.env
+.env*.local
+
+npm-debug.log*
+.DS_Store
+*.tsbuildinfo

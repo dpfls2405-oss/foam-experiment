@@ -1,6 +1,5 @@
 'use client';
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
 
 export default function FactorManager({ factors, onRefresh }) {
   const [showAdd, setShowAdd] = useState(false);
@@ -12,19 +11,22 @@ export default function FactorManager({ factors, onRefresh }) {
   async function addFactor() {
     if (!newFactor.name || !newFactor.unit) return alert('변수명과 단위를 입력하세요');
     const maxOrder = Math.max(0, ...factors.map(f => f.sort_order || 0));
-    const { error } = await supabase.from('exp_factors').insert({
-      name: newFactor.name,
-      unit: newFactor.unit,
-      sort_order: maxOrder + 1,
+    const res = await fetch('/api/factors', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newFactor.name, unit: newFactor.unit, sort_order: maxOrder + 1 }),
     });
-    if (error) return alert('저장 실패: ' + error.message);
+    const data = await res.json();
+    if (!data.ok) return alert('저장 실패: ' + (data.error || ''));
     setNewFactor({ name: '', unit: '' });
     setShowAdd(false);
     onRefresh();
   }
 
   async function toggleFactor(id, isActive) {
-    await supabase.from('exp_factors').update({ is_active: !isActive }).eq('id', id);
+    await fetch('/api/factors', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, is_active: !isActive }),
+    });
     onRefresh();
   }
 

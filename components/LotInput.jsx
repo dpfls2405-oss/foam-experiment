@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase, compressImage } from '@/lib/supabase';
+import { compressImage } from '@/lib/supabase';
 
 const ZONE_LABELS = ['좌상','상','우상','좌중','중앙','우중','좌하','하','우하'];
 const FILL_LABELS = ['없음','경미','보통','심각'];
@@ -28,17 +28,17 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
   }, [runId]);
 
   async function loadSpecimens() {
-    const { data } = await supabase.from('exp_specimens').select('*').eq('run_id',runId).order('specimen_no');
-    if (data?.length) setSpecimens(data.map(s=>({...s,defect_severity:s.defect_severity||{}})));
+    const data = await fetch(`/api/specimens?run_id=${runId}`).then(r=>r.json());
+    if (Array.isArray(data)&&data.length) setSpecimens(data.map(s=>({...s,defect_severity:s.defect_severity||{}})));
     else setSpecimens(Array.from({length:10},(_,i)=>({run_id:runId,specimen_no:i+1,weight:null,hardness:null,defect_severity:{},memo:''})));
   }
   async function loadFixed() {
-    const { data } = await supabase.from('exp_run_fixed_factors').select('*').eq('run_id',runId);
-    setFixedFactors(data||[]);
+    const data = await fetch(`/api/run-fixed-factors?run_id=${runId}`).then(r=>r.json());
+    setFixedFactors(Array.isArray(data)?data:[]);
   }
   async function loadPhotos() {
-    const { data } = await supabase.from('exp_run_photos').select('*').eq('run_id',runId).order('created_at');
-    setPhotos(data||[]);
+    const data = await fetch(`/api/run-photos?run_id=${runId}`).then(r=>r.json());
+    setPhotos(Array.isArray(data)?data:[]);
   }
 
   function updateSpec(idx,field,value) {
@@ -67,40 +67,41 @@ export default function LotInput({ runId, runs, factors, onRefresh, onSelectRun 
   async function handlePhotoUpload(e) {
     const file=e.target.files?.[0]; if(!file||!runId)return;
     const body=await compressImage(file);
-    const path=`experiment/${runId}/${Date.now()}.jpg`;
-    const{error}=await supabase.storage.from('foam-photos').upload(path,body,{upsert:true,contentType:'image/jpeg'});
-    if(error){alert('업로드 실패');return;}
-    const{data:urlData}=supabase.storage.from('foam-photos').getPublicUrl(path);
-    await supabase.from('exp_run_photos').insert({run_id:runId,photo_url:urlData.publicUrl,memo:newPhotoMemo||null});
+    const fd=new FormData();
+    fd.append('file',body,'photo.jpg');
+    fd.append('run_id',String(runId));
+    const up=await fetch('/api/upload',{method:'POST',body:fd}).then(r=>r.json());
+    if(!up.ok){alert('업로드 실패');return;}
+    await fetch('/api/run-photos',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({run_id:runId,path:up.path,memo:newPhotoMemo||null})});
     setNewPhotoMemo('');loadPhotos();e.target.value='';
   }
   async function deletePhoto(photoId) {
     if(!confirm('사진을 삭제하시겠습니까?'))return;
-    await supabase.from('exp_run_photos').delete().eq('id',photoId);
+    await fetch(`/api/run-photos?id=${photoId}`,{method:'DELETE'});
     loadPhotos();
   }
   async function updatePhotoMemo(photoId,memo) {
-    await supabase.from('exp_run_photos').update({memo:memo||null}).eq('id',photoId);
+    await fetch('/api/run-photos',{method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:photoId,memo:memo||null})});
   }
 
   async function saveAll() {
     if(!runId)return; setSaving(true);
     try {
-      await supabase.from('exp_runs').update({temp_upper:tempUpper?Number(tempUpper):null,temp_lower:tempLower?Number(tempLower):null}).eq('id',runId);
-      await supabase.from('exp_specimens').delete().eq('run_id',runId);
       const rows=specimens.filter(s=>s.weight!==null||s.hardness!==null||Object.keys(s.defect_severity||{}).length>0)
-        .map(s=>({run_id:runId,specimen_no:s.specimen_no,weight:s.weight,hardness:s.hardness,
+        .map(s=>({specimen_no:s.specimen_no,weight:s.weight,hardness:s.hardness,
           defect_severity:s.defect_severity||{},defect_zones:Object.keys(s.defect_severity||{}).map(Number),memo:s.memo||''}));
-      if(rows.length){const{error}=await supabase.from('exp_specimens').insert(rows);if(error)throw error;}
+      const res=await fetch('/api/lot',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({runId,tempUpper:tempUpper?Number(tempUpper):null,tempLower:tempLower?Number(tempLower):null,specimens:rows})});
+      const data=await res.json();
+      if(!data.ok)throw new Error(data.error||'저장 실패');
       alert('저장 완료');onRefresh();
     }catch(err){alert('저장 실패: '+err.message);}finally{setSaving(false);}
   }
   async function deleteRun() {
     if(!confirm('삭제하시겠습니까?'))return;
-    await supabase.from('exp_run_photos').delete().eq('run_id',runId);
-    await supabase.from('exp_specimens').delete().eq('run_id',runId);
-    await supabase.from('exp_run_fixed_factors').delete().eq('run_id',runId);
-    await supabase.from('exp_runs').delete().eq('id',runId);
+    await fetch(`/api/runs?id=${runId}`,{method:'DELETE'});
     onSelectRun(null);onRefresh();
   }
 

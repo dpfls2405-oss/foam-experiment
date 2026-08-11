@@ -1,6 +1,9 @@
 'use client';
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+
+async function patchJson(url, body) {
+  await fetch(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
 
 export default function Settings({ molds, boilers, factors, onRefresh }) {
   const [showAddMold, setShowAddMold] = useState(false);
@@ -13,35 +16,39 @@ export default function Settings({ molds, boilers, factors, onRefresh }) {
 
   async function addMold() {
     if (!newMold.mold_id) return alert('금형 ID를 입력하세요');
-    const { error } = await supabase.from('exp_molds').insert({
-      mold_id: newMold.mold_id,
-      ref_weight: Number(newMold.ref_weight),
-      boiler_id: newMold.boiler_id || null,
-      description: newMold.description || null,
+    const res = await fetch('/api/molds', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mold_id: newMold.mold_id,
+        ref_weight: Number(newMold.ref_weight),
+        boiler_id: newMold.boiler_id || null,
+        description: newMold.description || null,
+      }),
     });
-    if (error) return alert('저장 실패: ' + error.message);
+    const data = await res.json();
+    if (!data.ok) return alert('저장 실패: ' + (data.error || ''));
     setNewMold({ mold_id: '', ref_weight: 770, boiler_id: '', description: '' });
     setShowAddMold(false);
     onRefresh();
   }
 
   async function saveMoldWeight(moldId, weight) {
-    await supabase.from('exp_molds').update({ ref_weight: Number(weight) }).eq('id', moldId);
+    await patchJson('/api/molds', { id: moldId, ref_weight: Number(weight) });
     onRefresh();
   }
 
   async function updateMoldBoiler(moldId, boilerId) {
-    await supabase.from('exp_molds').update({ boiler_id: boilerId || null }).eq('id', moldId);
+    await patchJson('/api/molds', { id: moldId, boiler_id: boilerId || null });
     onRefresh();
   }
 
   async function toggleMold(moldId, isActive) {
-    await supabase.from('exp_molds').update({ is_active: !isActive }).eq('id', moldId);
+    await patchJson('/api/molds', { id: moldId, is_active: !isActive });
     onRefresh();
   }
 
   async function saveFactorDefault(factorId, value) {
-    await supabase.from('exp_factors').update({ default_value: value || null }).eq('id', factorId);
+    await patchJson('/api/factors', { id: factorId, default_value: value || null });
     onRefresh();
   }
 
